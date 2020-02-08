@@ -1,13 +1,3 @@
-new_IShares <- function(summary_link,
-                        ...,
-                        class = character()) {
-    new_ETF(
-        summary_link = summary_link,
-        ...,
-        class = c(class, "IShares")
-    )
-} # new_IShares
-
 #' IShares class constructor
 #'
 #' IShares class constructor
@@ -23,37 +13,45 @@ IShares <- function(summary_link) {
     )
 } # IShares
 
-#' @export
-download_summary_data <- function(obj, as = "text") {
-    UseMethod("download_summary_data")
-} # download_summary_data
-
-#' Download IShares summary
-#'
-#' Downloads the IShares summary data from the IShares web site
-#'
-#' @param \code{IShares} object
-#' @inheritParams httr::content
-#'
-#' @return a list with the following fields
-#'    \itemize{
-#'       \item \code{columns} column names
-#'       \item \code{data} the data
-#'    }
-#' @export
-download_summary_data.IShares <- function(obj, as = "text") {
-    futile.logger::flog.info(
-        glue::glue("Downloading IShares summary data from {obj$summary_link}")
+new_IShares <- function(summary_link,
+                        ...,
+                        class = character()) {
+    res_parsed <- download_summary_data(summary_link = summary_link)
+    summary_data <- parse_summary_data(res_parsed = res_parsed)
+    new_ETF(
+        summary_link = summary_link,
+        summary_data = summary_data,
+        ...,
+        class = c(class, "IShares")
     )
-    res <- httr::GET(url = obj$summary_link)
+} # new_IShares
+
+#' @export
+download_summary_data <- function(summary_link, as = "parsed") {
+    futile.logger::flog.info(
+        glue::glue("Downloading IShares summary data from {summary_link} and returning it as {dplyr::if_else(as == \"parsed\", \"list\", \"text\")}")
+    )
+    res <- httr::GET(url = summary_link)
     res_parsed <- httr::content(res, as = as)
     return(res_parsed)
-} # download_summary_data.IShares
+} # download_summary_data
 
-df <- tibble::tibble(a = res_parsed$data$tableData$columns) %>%
-    tidyr::unnest_wider(a)
-
-parse_summary_data_list <- function(res_parsed) {
+#' Parse IShares list
+#'
+#' @param res_parsed a list returned by the \link{httr::content} function. The list
+#'     ha the following attributes: \itemize{
+#'     \item \code{code}
+#'     \item \code{message}
+#'     \item \code{status}
+#'     \item \code{code}
+#'     }
+#'     The most important attribute is data which contains the actual IShares data.
+#'     In particular, it's a list with the following attributes: \itemize{
+#'        \item \code{tableData} a list with two attributes: \code{columns} and
+#'           \code{data}. The first one store the column names and the second the actual data
+#'        \item \code{config}
+#'     }
+parse_summary_data <- function(res_parsed) {
     assertthat::assert_that(is.list(res_parsed))
     ## -------------------------------------------------------------------------
     # 1) COLNAMES PARSING
@@ -62,56 +60,38 @@ parse_summary_data_list <- function(res_parsed) {
         tidyr::unnest_wider(a) %>%
         dplyr::mutate(col_id = 1:nrow(.)) %>%
         dplyr::select(col_id, col_name = name)
-
-    q <- res_parsed$data$tableData$data %>%
-        purrr::map_dfr( ~ {
+    ## -------------------------------------------------------------------------
+    # 2) DATA PARSING
+    ## -------------------------------------------------------------------------
+    out <- res_parsed$data$tableData$data %>%
+        purrr::map(~ {
             column_data_df <- tibble::tibble(etf_data_list = .x) %>%
                 dplyr::mutate(col_id = 1:nrow(.))
-            column_data_df_num <- column_data_df %>%
+            column_data_df_list <- column_data_df %>%
                 dplyr::filter(purrr::map_lgl(etf_data_list, is.list)) %>%
                 tidyr::unnest_wider(etf_data_list) %>%
                 dplyr::select(col_id, value = d)
             column_data_df_chr <- column_data_df %>%
-                dplyr::filter(!purrr::map_lgl(etf_data_list, is.list)) %>%
-                dplyr::mutate(etf_data_list = purrr::map_chr(etf_data_list, ~parse_chr_data(unlist(.x)))) %>%
+                dplyr::filter(purrr::map_lgl(etf_data_list, is.character)) %>%
+                dplyr::mutate(etf_data_list = purrr::map_chr(etf_data_list, ~
+                                                                 parse_chr_data(unlist(.x)))) %>%
                 dplyr::select(col_id, value = etf_data_list)
-            list(column_data_df_chr, column_data_df_num) %>%
-                purrr::map_dfc( ~ {
+            column_data_df_num <- column_data_df %>%
+                dplyr::filter(purrr::map_lgl(etf_data_list, is.numeric)) %>%
+                dplyr::mutate(value = unlist(etf_data_list)) %>%
+                dplyr::select(col_id, value)
+            list(column_data_df_chr, column_data_df_list, column_data_df_num) %>%
+                purrr::map_dfc(~ {
                     .x %>%
-                        dplyr::left_join(
-                            columns_df,
-                            by = "col_id"
-                        ) %>%
+                        dplyr::left_join(columns_df,
+                                         by = "col_id") %>%
                         dplyr::select(-col_id) %>%
                         tidyr::pivot_wider(names_from = col_name, values_from = value)
                 })
         })
-
-
-    column_data_df <- tibble::tibble(etf_data_list = res_parsed$data$tableData$data) %>%
-        dplyr::slice(1) %>%
-        tidyr::unnest(etf_data_list) %>%
-        dplyr::mutate(col_id = 1:nrow(.),
-                      row_id = 1)
-    column_data_df_num <- column_data_df %>%
-        dplyr::filter(purrr::map_lgl(etf_data_list, is.list)) %>%
-        tidyr::unnest_wider(etf_data_list) %>%
-        dplyr::select(col_id, value = r)
-    column_data_df_chr <- column_data_df %>%
-        dplyr::filter(!purrr::map_lgl(etf_data_list, is.list)) %>%
-        dplyr::mutate(etf_data_list = purrr::map_chr(etf_data_list, ~parse_chr_data(unlist(.x)))) %>%
-        dplyr::select(col_id, value = etf_data_list)
-    column_data_df_num %>%
-        dplyr::left_join(
-            columns_df,
-            by = "col_id"
-        ) %>%
-        # dplyr::mutate(row_id = 1) %>%
-        dplyr::select(-col_id) %>%
-        tidyr::pivot_wider(names_from = col_name, values_from = value)
-
-
-} # parse_summary_data_list
+    out <- out %>%
+        purrr::reduce(dplyr::bind_rows)
+} # parse_summary_data
 
 parse_chr_data <- function(s) {
     dplyr::case_when(
@@ -119,113 +99,3 @@ parse_chr_data <- function(s) {
         TRUE ~ as.character(s)
     )
 } # parse_chr_data
-
-# parse_summary_data <- function(json_obj) {
-#     stopifnot(is.character(json_obj))
-#     columns_data_json_obj <- json_obj %>%
-#         tidyjson::json_types() %>%
-#         tidyjson::gather_object(column.name = "name1") %>%
-#         dplyr::filter(name1 == "data") %>%
-#         tidyjson::gather_object(column.name = "name2") %>%
-#         dplyr::filter(name2 == "tableData") %>%
-#         tidyjson::gather_object(column.name = "name3")
-#     columns <- columns_data_json_obj %>%
-#         dplyr::filter(name3 == "columns") %>%
-#         tidyjson::gather_array() %>%
-#         tidyjson::spread_all() %>%
-#         dplyr::as_tibble() %>%
-#         dplyr::select(hidden, mobile, col_name = name) %>%
-#         dplyr::mutate(column_index = 1:nrow(.))
-#     data <- columns_data_json_obj %>%
-#         dplyr::filter(name3 == "data") %>%
-#         tidyjson::gather_array(column.name = "etf_index")
-#     df <- 1:nrow(data) %>%
-#         purrr::map_dfr( ~ {
-#             tmp <- data %>%
-#                 dplyr::filter(etf_index == .x) %>%
-#                 tidyjson::gather_array(column.name = "column_index") %>%
-#                 tidyjson::json_types()
-#             data_string <- tmp %>%
-#                 dplyr::filter(type == "string") %>%
-#                 tidyjson::append_values_string() %>%
-#                 dplyr::as_tibble() %>%
-#                 dplyr::select(column_index, value = string)
-#             data_number <- tmp %>%
-#                 dplyr::filter(type == "number") %>%
-#                 tidyjson::append_values_number() %>%
-#                 dplyr::as_tibble() %>%
-#                 dplyr::select(column_index, value = number)
-#             data_object <- tmp %>%
-#                 dplyr::filter(type == "object") %>%
-#                 tidyjson::spread_all() %>%
-#                 dplyr::as_tibble() %>%
-#                 dplyr::select(column_index, value = r)
-#             list(data_string, data_number, data_object) %>%
-#                 purrr::map_dfc(compose_row, columns_df = columns, etf_index = .x)
-#         })
-#     df <- dplyr::tibble()
-#     for (i in 1:nrow(data)) {
-#         print(i)
-#         tmp <- data %>%
-#             dplyr::filter(etf_index == i) %>%
-#             tidyjson::gather_array(column.name = "column_index") %>%
-#             tidyjson::json_types()
-#         data_string <- tmp %>%
-#             dplyr::filter(type == "string") %>%
-#             tidyjson::append_values_string() %>%
-#             dplyr::as_tibble() %>%
-#             dplyr::select(column_index, value = string)
-#         data_number <- tmp %>%
-#             dplyr::filter(type == "number") %>%
-#             tidyjson::append_values_number() %>%
-#             dplyr::as_tibble() %>%
-#             dplyr::select(column_index, value = number)
-#         data_object <- tmp %>%
-#             dplyr::filter(type == "object") %>%
-#             tidyjson::spread_all() %>%
-#             dplyr::as_tibble() %>%
-#             dplyr::select(column_index, value = r)
-#         df <- dplyr::bind_rows(
-#           df,
-#           list(data_string, data_number, data_object) %>%
-#               purrr::map_dfc(compose_row, columns_df = columns, etf_index = i)
-#         )
-#     }
-#
-#         dplyr::filter(array.index == 1) %>%
-#         tidyjson::gather_array() %>%
-#         tidyjson::json_types()
-#     data %>%
-#         dplyr::filter(type == "object") %>%
-#         tidyjson::spread_all()
-# } #parse_summary_data2
-
-compose_row <- function(long_df, columns_df, etf_index) {
-    long_df %>%
-        dplyr::left_join(
-            columns_df,
-            by = "column_index"
-        ) %>%
-        dplyr::mutate(etf_index = etf_index) %>%
-        tidyr::pivot_wider(etf_index, names_from = col_name, values_from = value)
-} # compose_row
-
-#' Parse column names
-#'
-#' This function parse the IShares column names returned in the \code{res$tableData$columns}
-#' list
-#'
-#' @param colnames_list a list whose elements are lists with the following fields
-#'    \itemize{
-#'       \item \code{hidden}: logical
-#'       \item \code{mobile}: logical
-#'       \item \code{name}: column name (string)
-#'    }
-#'
-#' @return a character vector
-#'
-#' @export
-IShares_parse_summary_colnames <- function(colnames_list) {
-    colnames_list %>%
-        purrr::map_chr(~purrr::pluck(.x, "name"))
-} # IShares_parse_summary_colnames

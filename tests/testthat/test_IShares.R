@@ -1,13 +1,14 @@
+library(testthat)
+library(ETF)
+
 context("IShares")
 
-w <- IShares(summary_link = IShares_link_IT)
-res <- download_summary_data(w)
+x <- IShares(summary_link = IShares_link_US)
+x <- IShares_IT(summary_link = IShares_link_IT)
+y <- IShares_US(summary_link = IShares_link_US)
 
-# consistency check, is they change the API this is gonna broke meaning that
-# the download method has to be changerd
-test_that("IShares summary data right structure", {
-    expect_equal(names(res), c("tableData", "config"))
-    expect_equal(names(res$tableData), c("columns", "data"))
-})
+y[y$localExchangeTicker == "IVV",]$productPageUrl
+https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?tab=top&fileType=json
 
 
+https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund
