@@ -51,7 +51,7 @@ parse_date_col_US <- function(vec) {
     }
 } # parse_date_col_US
 
-download_etf_constituents_US <- function(summary_data, download_csv = TRUE) {
+download_etf_constituents_US <- function(summary_data, download_csv = TRUE, url_fixed_number) {
     futile.logger::flog.info("downloading US ETF constituents")
     assertthat::assert_that(is.data.frame(summary_data))
     ## -------------------------------------------------------------------------
@@ -59,7 +59,7 @@ download_etf_constituents_US <- function(summary_data, download_csv = TRUE) {
     ## -------------------------------------------------------------------------
     summary_data <- summary_data %>%
         dplyr::mutate(
-            effective_productPageUrl = glue::glue("https://www.ishares.com{productPageUrl}/1467271812596.ajax?fileType=csv&fileName={localExchangeTicker}_holdings&dataType=fund")
+            effective_productPageUrl = glue::glue("https://www.ishares.com{productPageUrl}/{url_fixed_number}.ajax?fileType=csv&fileName={localExchangeTicker}_holdings&dataType=fund")
         )
     ## -------------------------------------------------------------------------
     # 2) DOWNLOAD THE CSV
@@ -69,13 +69,18 @@ download_etf_constituents_US <- function(summary_data, download_csv = TRUE) {
         summary_data[["effective_productPageUrl"]] %>%
             purrr::iwalk( ~ {
                 ticker <- summary_data[["localExchangeTicker"]][[.y]]
-                futile.logger::flog.info(glue::glue("downloading constituents for {ticker} in csv format"))
-                try({
-                    download.file(
-                        url = .x,
-                        destfile = glue::glue("./csv_files/{ticker}.csv")
-                    )
-                })
+                if (!is.null(ticker) & !is.na(ticker)) {
+                    futile.logger::flog.info(glue::glue("downloading constituents for {ticker} in csv format"))
+                    try({
+                        download.file(
+                            url = .x,
+                            destfile = glue::glue("./csv_files/{ticker}.csv")
+                        )
+                    })
+                } else {
+                    NULL
+                }
+
             })
     }
     ## -------------------------------------------------------------------------
@@ -293,3 +298,7 @@ parse_template_3 <- function(melted_data) {
         na.omit() %>%
         dplyr::select(-row)
 } # parse_template_3
+
+get_url_fixed_number.IShares_US <- function(obj) {
+    as.character("1467271812596")
+} # get_url_fixed_number.IShares_IT
