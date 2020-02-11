@@ -26,8 +26,15 @@ IShares_US <- function(summary_link = character(),
     # 3) GET ETF CONSTITUENTS
     ## -------------------------------------------------------------------------
     if (obj$get_constituents) {
-        constituents_list <- download_etf_constituents_US(obj$summary_data)
-        template_classification <- classify_constituent_data(constituents_list)
+        constituents_list <- download_etf_constituents_US(
+            summary_data = get_summary_data(obj),
+            url_fixed_number = get_url_fixed_number(obj)
+        )
+        template_classification <- classify_constituent_data(
+            constituents_list = constituents_list,
+            region = "US",
+            n_template = 3
+        )
         obj$constituents_list <- parse_etf_constituents(constituents_list,
                                                         template_classification)
     }
@@ -51,95 +58,6 @@ parse_date_col_US <- function(vec) {
     }
 } # parse_date_col_US
 
-download_etf_constituents_US <- function(summary_data, download_csv = TRUE, url_fixed_number) {
-    futile.logger::flog.info("downloading US ETF constituents")
-    assertthat::assert_that(is.data.frame(summary_data))
-    ## -------------------------------------------------------------------------
-    # 1) CREATE THE URL
-    ## -------------------------------------------------------------------------
-    summary_data <- summary_data %>%
-        dplyr::mutate(
-            effective_productPageUrl = glue::glue("https://www.ishares.com{productPageUrl}/{url_fixed_number}.ajax?fileType=csv&fileName={localExchangeTicker}_holdings&dataType=fund")
-        )
-    ## -------------------------------------------------------------------------
-    # 2) DOWNLOAD THE CSV
-    ## -------------------------------------------------------------------------
-    if (download_csv) {
-        dir.create("./csv_files")
-        summary_data[["effective_productPageUrl"]] %>%
-            purrr::iwalk( ~ {
-                ticker <- summary_data[["localExchangeTicker"]][[.y]]
-                if (!is.null(ticker) & !is.na(ticker)) {
-                    futile.logger::flog.info(glue::glue("downloading constituents for {ticker} in csv format"))
-                    try({
-                        download.file(
-                            url = .x,
-                            destfile = glue::glue("./csv_files/{ticker}.csv")
-                        )
-                    })
-                } else {
-                    NULL
-                }
-
-            })
-    }
-    ## -------------------------------------------------------------------------
-    # 3) DOWNLOAD MELTED DATA
-    ## -------------------------------------------------------------------------
-    constituents_list <- purrr::map2(
-        summary_data[["effective_productPageUrl"]],
-        summary_data[["localExchangeTicker"]],
-        ~ {
-            futile.logger::flog.info(glue::glue("downloading constituents for {.y} in melted format"))
-            tryCatch({
-                readr::melt_csv(file = .x)
-            },
-            error = function(e) {
-                futile.logger::flog.error(e)
-                NULL
-            })
-        }) %>%
-        purrr::set_names(summary_data[["localExchangeTicker"]])
-} # download_etf_constituents_US
-
-classify_constituent_data <- function(constituents_list) {
-    assertthat::assert_that(is.list(constituents_list))
-    out <- constituents_list %>%
-        purrr::imap( ~ {
-            futile.logger::flog.info(glue::glue("classifying {.y}"))
-            tryCatch({
-                if (is_template_1(.x)) {
-                    "parse_template_1"
-                } else if (is_template_2(.x)) {
-                    "parse_template_2"
-                } else if (is_template_3(.x)) {
-                    "parse_template_3"
-                } else {
-                    NULL
-                }
-            },
-            error = function(e) {
-                futile.logger::flog.error(glue::glue("{.y} : {e}"))
-                return(NULL)
-            })
-        })
-} # classify_constituent_data
-
-parse_etf_constituents <- function(constituents_list,
-                                   template_classification) {
-    purrr::map2(
-        constituents_list,
-        template_classification,
-        ~ {
-            if (!is.null(.y)) {
-                try({ get(.y)(.x) })
-            } else {
-                NULL
-            }
-        }
-    )
-} # parse_etf_constituents
-
 #' check if data is in template 1 format
 #'
 #' the constituents are in template 1 if in the range A2:A8 there are the following
@@ -149,7 +67,7 @@ parse_etf_constituents <- function(constituents_list,
 #' @param melted_data
 #'
 #' @return \code{TRUE} if data is in template 1 format \code{FALSE} otherwise
-is_template_1 <- function(melted_data) {
+is_template_1_US <- function(melted_data) {
     if (is.null(melted_data)) return(FALSE)
     assertthat::assert_that(is.data.frame(melted_data))
     incipit_col <- c(
@@ -172,7 +90,7 @@ is_template_1 <- function(melted_data) {
     }
 } # is_template_1
 
-parse_template_1 <- function(melted_data) {
+parse_template_1_US <- function(melted_data) {
     assertthat::assert_that(is.data.frame(melted_data))
     aod <- melted_data %>%
         dplyr::filter(row == 2, col == 2) %>%
@@ -206,7 +124,7 @@ parse_template_1 <- function(melted_data) {
 #' the second chinck expands this ETF showing all the 2500 names
 #'
 #'
-is_template_2 <- function(melted_data) {
+is_template_2_US <- function(melted_data) {
     if (is.null(melted_data)) return(FALSE)
     assertthat::assert_that(is.data.frame(melted_data))
     incipit_col <- c(
@@ -229,7 +147,7 @@ is_template_2 <- function(melted_data) {
     }
 } # is_template_2
 
-parse_template_2 <- function(melted_data) {
+parse_template_2_US <- function(melted_data) {
     assertthat::assert_that(is.data.frame(melted_data))
     ## -------------------------------------------------------------------------
     # 1) EXTRACT AOD
@@ -266,7 +184,7 @@ parse_template_2 <- function(melted_data) {
     dplyr::bind_rows(chunk1, chunk2)
 } # parse_template_2
 
-is_template_3 <- function(melted_data) {
+is_template_3_US <- function(melted_data) {
     if (is.null(melted_data)) return(FALSE)
     assertthat::assert_that(is.data.frame(melted_data))
     col_names <- melted_data %>%
@@ -279,7 +197,7 @@ is_template_3 <- function(melted_data) {
     }
 } # is_template_3
 
-parse_template_3 <- function(melted_data) {
+parse_template_3_US <- function(melted_data) {
     assertthat::assert_that(is.data.frame(melted_data))
     col_names <- melted_data %>%
         dplyr::filter(value %in% c("Name", "Weight (%)")) %>%
