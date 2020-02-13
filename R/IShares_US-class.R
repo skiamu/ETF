@@ -6,6 +6,8 @@
 #' @inheritParams IShares
 IShares_US <- function(summary_link = character(),
                        get_constituents = TRUE,
+                       download_constituents_csv = FALSE,
+                       melted_constituents_list = list(),
                        constituents_list = list(),
                        ...,
                        class = character()) {
@@ -14,7 +16,9 @@ IShares_US <- function(summary_link = character(),
     ## -------------------------------------------------------------------------
     obj <- new_IShares(
         summary_link = summary_link,
+        melted_constituents_list = melted_constituents_list,
         constituents_list = constituents_list,
+        region = "US",
         ...,
         class = c(class, "IShares_US")
     )
@@ -25,25 +29,28 @@ IShares_US <- function(summary_link = character(),
     ## -------------------------------------------------------------------------
     # 3) GET ETF CONSTITUENTS
     ## -------------------------------------------------------------------------
-    if (obj$get_constituents) {
-        constituents_list <- download_etf_constituents_US(
+    if (get_constituents) {
+        obj$melted_constituents_list <- download_etf_constituents(
             summary_data = get_summary_data(obj),
-            url_fixed_number = get_url_fixed_number(obj)
+            url_fixed_number = get_url_fixed_number(obj),
+            download_csv = download_constituents_csv
         )
         template_classification <- classify_constituent_data(
-            constituents_list = constituents_list,
+            melted_constituents_list = obj$melted_constituents_list,
             region = "US",
             n_template = 3
         )
-        obj$constituents_list <- parse_etf_constituents(constituents_list,
-                                                        template_classification)
+        obj$constituents_list <- parse_etf_constituents(
+            melted_constituents_list = obj$melted_constituents_list,
+            template_classification = template_classification
+        )
     }
     return(obj)
 } # IShares_US
 
 parse_summary_data_US <- function(summary_data) {
     futile.logger::flog.info("parsing US summary data from char")
-    assertthat::assert_that(is.data.frame(chr_summary_data))
+    assertthat::assert_that(is.data.frame(summary_data))
     summary_data %>%
         purrr::modify_if(is.character, readr::parse_guess) %>%
         purrr::modify_at(dplyr::vars(dplyr::contains("AsOf")), parse_date_col_US) %>%
@@ -83,8 +90,8 @@ is_template_1_US <- function(melted_data) {
             dplyr::filter(value %in% incipit_col, col == 1) %>%
             dplyr::group_by(value) %>%
             dplyr::summarise(n = dplyr::n()) %>%
-            dplyr::filter(n > 1)
-        if (nrow(occurrences) == 0) TRUE else FALSE
+            dplyr::mutate(is_occurrance_1 = n == 1)
+        if (any(occurrences$is_occurrance_1)) TRUE else FALSE
     } else {
         FALSE
     }
@@ -105,6 +112,7 @@ parse_template_1_US <- function(melted_data) {
         dplyr::distinct(col_name, .keep_all = TRUE)
     data <- melted_data %>%
         dplyr::filter(row > 10) %>%
+        dplyr::filter(!stringr::str_detect(value, pattern = "^\\s+$")) %>% # remove whitespaces
         dplyr::inner_join(
             col_names,
             by = "col") %>%
@@ -112,8 +120,14 @@ parse_template_1_US <- function(melted_data) {
             id_cols = row,
             names_from = col_name,
             values_from = value) %>%
-        dplyr::mutate(aod = aod) %>%
+        dplyr::select(-row) %>%
+        dplyr::filter_all(dplyr::any_vars(!is.na(.))) %>%
+        dplyr::mutate(aod = aod, idx = 1:nrow(.)) %>%
+        dplyr::select(aod, idx, dplyr::everything()) %>%
         purrr::modify_if(is.character, readr::parse_guess)
+    # the SEDOL must bu a string
+    if ("SEDOL" %in% colnames(data)) data$SEDOL <- as.character(data$SEDOL)
+    return(data)
 } # parse_template_1
 
 #' check if data is in template 2 format
@@ -140,8 +154,8 @@ is_template_2_US <- function(melted_data) {
             dplyr::filter(value %in% incipit_col, col == 1) %>%
             dplyr::group_by(value) %>%
             dplyr::summarise(n = dplyr::n()) %>%
-            dplyr::filter(n == 2)
-        if (nrow(occurrences) == 0) FALSE else TRUE
+            dplyr::mutate(is_occurrance_1 = n == 1)
+        if (any(occurrences$is_occurrance_1)) FALSE else TRUE
     } else {
         FALSE
     }
@@ -174,12 +188,12 @@ parse_template_2_US <- function(melted_data) {
     ## -------------------------------------------------------------------------
     chunk1 <- melted_data %>%
         dplyr::filter(row < second_etf_name_nrow - 1) %>% # blank separating line
-        parse_template_1 %>%
+        parse_template_1_US %>%
         dplyr::mutate(etf_name = first_etf_name)
     chunk2 <- melted_data %>%
         dplyr::filter(row >= second_etf_name_nrow) %>%
         dplyr::mutate(row = row - second_etf_name_nrow + 1) %>%
-        parse_template_1() %>%
+        parse_template_1_US() %>%
         dplyr::mutate(etf_name = second_etf_name)
     dplyr::bind_rows(chunk1, chunk2)
 } # parse_template_2
@@ -204,6 +218,7 @@ parse_template_3_US <- function(melted_data) {
         dplyr::select(col, col_name = value)
     melted_data %>%
         dplyr::filter(row > 3) %>%
+        dplyr::filter(!stringr::str_detect(value, pattern = "^\\s+$")) %>% # remove whitespaces
         dplyr::inner_join(
             col_names,
             by = "col"

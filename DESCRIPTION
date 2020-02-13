@@ -22,7 +22,8 @@ Imports:
     magrittr,
     tidyjson,
     jsonlite,
-    assertthat
+    assertthat,
+    tibble
 RoxygenNote: 7.0.2
 Suggests: 
     testthat

@@ -53,6 +53,7 @@ download_summary_data <- function(summary_link, as = "parsed") {
 #'     }
 parse_summary_data <- function(res_parsed) {
     assertthat::assert_that(is.list(res_parsed))
+    futile.logger::flog.info("parsing summary data")
     ## -------------------------------------------------------------------------
     # 1) COLNAMES PARSING
     ## -------------------------------------------------------------------------
@@ -92,6 +93,15 @@ parse_summary_data <- function(res_parsed) {
         })
     out <- out %>%
         purrr::reduce(dplyr::bind_rows)
+    # since the column `localExchangeTicker` will be used extensively in the code
+    # we want to make sure it doesn't contain white spaces
+    if ("localExchangeTicker" %in% colnames(out)) {
+        out$localExchangeTicker <- out$localExchangeTicker %>%
+            stringr::str_trim()
+    } else {
+        futile.logger::flog.warn("the column `localExchangeTicker` doesn't exist in summary data!")
+    }
+    return(out)
 } # parse_summary_data
 
 parse_chr_data <- function(s) {
@@ -157,7 +167,10 @@ download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fix
             if (!is.null(.y) & !is.na(.y)) {
                 futile.logger::flog.info(glue::glue("downloading constituents for {.y} in melted format"))
                 tryCatch({
-                    readr::melt_csv(file = .x)
+                    readr::melt_csv(file = .x,
+                                    trim_ws = TRUE,
+                                    na = c("", "NA", "-", " "))
+
                 },
                 error = function(e) {
                     futile.logger::flog.error(e)
@@ -170,9 +183,9 @@ download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fix
         purrr::set_names(localExchangeTicker)
 } # download_etf_constituents_US
 
-classify_constituent_data <- function(constituents_list, region = "US", n_template = 3) {
-    assertthat::assert_that(is.list(constituents_list))
-    out <- constituents_list %>%
+classify_constituent_data <- function(melted_constituents_list, region = "US", n_template = 3) {
+    assertthat::assert_that(is.list(melted_constituents_list))
+    out <- melted_constituents_list %>%
         purrr::imap( ~ {
             futile.logger::flog.info(glue::glue("classifying {.y}"))
             tryCatch({
@@ -192,14 +205,17 @@ classify_constituent_data <- function(constituents_list, region = "US", n_templa
         })
 } # classify_constituent_data
 
-parse_etf_constituents <- function(constituents_list,
+parse_etf_constituents <- function(melted_constituents_list,
                                    template_classification) {
-    out <- vector("list", length(constituents_list))
-    for (i in seq_along(constituents_list)) {
-        if (!is.null(constituents_list[[i]])) {
-            futile.logger::flog.info(glue::glue("parsing {names(constituents_list)[[i]]} using {template_classification[[i]]}"))
+    ## -------------------------------------------------------------------------
+    # 1) PARSE ETF CONSTITUENTS
+    ## -------------------------------------------------------------------------
+    out <- vector("list", length(melted_constituents_list))
+    for (i in seq_along(melted_constituents_list)) {
+        if (!is.null(melted_constituents_list[[i]])) {
+            futile.logger::flog.info(glue::glue("parsing {names(melted_constituents_list)[[i]]} using {template_classification[[i]]}"))
             out[[i]] <- tryCatch({
-                get(template_classification[[i]])(constituents_list[[i]])
+                get(template_classification[[i]])(melted_constituents_list[[i]])
             },
             error = function(e) {
                 futile.logger::flog.error(e)
@@ -209,10 +225,118 @@ parse_etf_constituents <- function(constituents_list,
             NULL
         }
     }
-    names(out) <- names(constituents_list)
+    ## -------------------------------------------------------------------------
+    # 2) SET LIST NAMES
+    ## -------------------------------------------------------------------------
+    names(out) <- names(melted_constituents_list)
+    ## -------------------------------------------------------------------------
+    # 3) SIGNAL ETF WITH NO CONSTITUENTS
+    ## -------------------------------------------------------------------------
+    is_null_lgl <- melted_constituents_list %>% purrr::map_lgl(is.null)
+    if (length(is_null_lgl) > 0) {
+        out[is_null_lgl] %>%
+            purrr::iwalk( ~ {
+                futile.logger::flog.warn(glue::glue("etf {.y} doesn't have constituents data"))
+            })
+    }
+    # out <- out[!is_null_lgl]
+    ## -------------------------------------------------------------------------
+    # 4) PARSE COLUMN NAMES
+    ## -------------------------------------------------------------------------
+    out <- out %>% purrr::modify_if(purrr::negate(is.null), rename_col)
     return(out)
 } # parse_etf_constituents
 
+rename_col <- function(df) {
+    df %>%
+        dplyr::rename_all( ~ {
+            .x %>%
+                stringr::str_replace_all(pattern = "[:punct:]", "") %>%
+                stringr::str_trim() %>%
+                stringr::str_replace_all(pattern = " ", "_") %>%
+                stringr::str_to_lower()
+        })
+} # rename_col
+
+#' @export
+add_const_to_summary_data <- function(obj) {
+    UseMethod("add_const_to_summary_data")
+} # add_const_to_summary_data
+
+add_const_to_summary_data <- function(obj) {
+    if (!purrr::is_empty(get_constituents(obj, ticker = "all")) &
+        !purrr::is_empty(get_summary_data(obj))) {
+        tibble::tibble(
+            ticker = names(get_constituents(obj, ticker = "all")),
+            constituents = get_constituents(obj, ticker = "all")
+        ) %>%
+            dplyr::right_join(
+                get_summary_data(obj),
+                by = c("ticker"="localExchangeTicker")
+            )
+    }
+} # add_const_to_summary_data
+
+#' Convert data in mongo format
+#'
+#' The data in mongo is saved using the aod and ticker as keys and the data is
+#' a list where the first field if the row from summary_data and the second the
+#' constituents datafarme
+#'
+#' @param obj a \code{IShares} object or one of its subclasses
+#'
+#' @return
+#'
+#' @export
+to_mongo_data_format <- function(obj) {
+    UseMethod("to_mongo_data_format")
+} # to_mongo_data_format
+
+#' @export
+to_mongo_data_format <- function(obj) {
+    tickers <- names(get_constituents(obj, ticker = "all"))
+    constituents_list <- get_constituents(obj)
+    summary_data <- get_summary_data(obj) %>%
+        dplyr::filter(localExchangeTicker %in% tickers)
+    out <- vector("list", length(tickers))
+    for (i in seq_along(tickers)) {
+        futile.logger::flog.info(glue::glue("converting in mongo format {tickers[[i]]}"))
+        summary_data_slice <- summary_data %>%
+            dplyr::filter(localExchangeTicker == tickers[[i]])
+        assertthat::assert_that(nrow(summary_data_slice) == 1)
+        ## 1) get aod ----------------------------------------------------------
+        if ("navAmountAsOf" %in% colnames(summary_data_slice)) {
+            aod <- summary_data_slice[["navAmountAsOf"]]
+            if (is.na(aod)) {
+                futile.logger::flog.error(glue::glue("aod NA for {tickers[[i]]}, not exported to mongo"))
+                next
+            }
+        } else {
+            futile.logger::flog.error(glue::glue("`summary_data` has no column `navAmountAsOf`!"))
+            next
+        }
+        ## 2) get constituents -------------------------------------------------
+        constituents_df <- constituents_list[[i]]
+        if (is.null(constituents_df)) {
+            futile.logger::flog.warn(glue::glue("{tickers[[i]]} has no constituents, exporting only summary data"))
+        }
+        ## 3) exporting to mongo format  ---------------------------------------
+        out[[i]] <- list(
+            aod = aod ,
+            ticker = glue::glue("{tickers[[i]]}_{get_region(obj)}"),
+            data = list(summary_data = summary_data_slice,
+                        constituents = constituents_df)
+        )
+    }
+    out <- out %>%
+        purrr::set_names(tickers) %>%
+        purrr::discard(is.null)
+    dplyr::setdiff(tickers, names(out)) %>%
+        purrr::walk( ~ {
+            futile.logger::flog.info(glue::glue("{.x} not expored to mongo format"))
+        })
+    return(out)
+} # to_mongo_data_format
 
 #' @export
 get_summary_data <- function(obj) {
@@ -223,3 +347,72 @@ get_summary_data.IShares <- function(obj) {
     assertthat::has_name(obj, "summary_data")
     obj[["summary_data"]]
 }
+
+#' @export
+get_constituents <- function(obj, ticker) {
+    UseMethod("get_constituents")
+} # get_constituents
+
+#' @export
+get_constituents <- function(obj, ticker = "all") {
+    assertthat::has_name(obj, "constituents_list")
+    if (ticker == "all") {
+        obj$constituents_list
+    } else {
+        assertthat::has_name(obj$constituents_list, ticker)
+        obj$constituents_list[ticker]
+    }
+} # get_constituents
+
+#' @export
+get_melted_constituents_list <- function(obj, ticker) {
+    UseMethod("get_melted_constituents_list")
+} # get_melted_constituents_list
+
+get_melted_constituents_list <- function(obj, ticker = "all") {
+    assertthat::has_name(obj, "melted_constituents_list")
+    if (ticker == "all") {
+        obj$melted_constituents_list
+    } else {
+        assertthat::has_name(obj$melted_constituents_list, ticker)
+        obj$melted_constituents_list[ticker]
+    }
+} # get_constituents
+
+#' @export
+get_region <- function(obj) {
+    UseMethod("get_region")
+} # get_region
+
+get_region.IShares <- function(obj) {
+    assertthat::has_name(obj, "region")
+    obj[["region"]]
+} # get_region
+
+
+#' @export
+to_csv <- function(obj, output_folder) {
+    UseMethod("to_csv")
+} # to_csv
+
+#' @export
+to_csv <- function(obj, output_folder) {
+    ## -------------------------------------------------------------------------
+    # 1) EXPORT SUMMARY DATA
+    ## -------------------------------------------------------------------------
+    summary_data <- get_summary_data(obj)
+    if (!purrr::is_empty(summary_data)) {
+        futile.logger::flog.info(glue::glue("exporting summary data for object of class {class(obj)[[1]]}, output_folder = {output_folder}"))
+        readr::write_csv(summary_data, path = glue::glue("{output_folder}/{get_region(obj)}_summary_data.csv"))
+    }
+    ## -------------------------------------------------------------------------
+    # 2) EXPORT CONSTITUENTS
+    ## -------------------------------------------------------------------------
+    get_constituents(obj, ticker = "all") %>%
+        purrr::iwalk( ~ {
+            if (!is.null(.x)) {
+                futile.logger::flog.info(glue::glue("exporting {.y} constituents to csv, output_folder = {output_folder}"))
+                readr::write_csv(.x, path = glue::glue("{output_folder}/{.y}_{get_region(obj)}_constituents.csv"))
+            }
+        })
+} # to_csv
