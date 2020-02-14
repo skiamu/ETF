@@ -24,7 +24,7 @@ IShares_UK <- function(summary_link,
     ## -------------------------------------------------------------------------
     # 2) PARSE CHARACTER SUMMMARY DATA
     ## -------------------------------------------------------------------------
-    obj$summary_data <- parse_summary_data_UK(obj$summary_data)
+    obj$summary_data <- parse_summary_data_UK(get_summary_data(obj))
     ## -------------------------------------------------------------------------
     # 3) GET ETF CONSTITUENTS
     ## -------------------------------------------------------------------------
@@ -32,7 +32,8 @@ IShares_UK <- function(summary_link,
         obj$melted_constituents_list <- download_etf_constituents(
             summary_data = get_summary_data(obj),
             url_fixed_number = get_url_fixed_number(obj),
-            download_csv = download_constituents_csv
+            download_csv = download_constituents_csv,
+            region = get_region(obj)
         )
         template_classification <- classify_constituent_data(
             melted_constituents_list = obj$melted_constituents_list,

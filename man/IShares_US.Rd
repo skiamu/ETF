@@ -4,12 +4,33 @@
 \alias{IShares_US}
 \title{IShares_US class constructor}
 \usage{
-IShares_US(summary_link, ..., class = character())
+IShares_US(summary_link = character(), get_constituents = TRUE,
+  download_constituents_csv = FALSE, melted_constituents_list = list(),
+  constituents_list = list(), ..., class = character())
 }
 \arguments{
-\item{summary_link}{link where the IShares summary data is downloaded from.
+\item{summary_link}{link where the IShares summary data (in JSON format) is downloaded from.
 This is the data summarizing all the ETF of the IShares provider}
+
+\item{get_constituents}{\code{TRUE} for downloading ETF constituents, \code{FALSE}
+otherwise}
+
+\item{download_constituents_csv}{\code{TRUE} for saving the csv constituents files
+from the ETF web site, \code{FALSE} otherwise}
+
+\item{melted_constituents_list}{constituents data in melted format}
+
+\item{constituents_list}{constituents data in parsed format}
+
+\item{...}{subclass additional attributes}
+
+\item{class}{subclass names}
+}
+\value{
+a new \code{IShares_US} object
 }
 \description{
-IShares_US class constructor
+the \code{IShares_US} class is a subclass of the \code{IShares} class and represents
+the ETF data from the US IShares website. It overrides some methods of the
+\code{IShares} class for taking into consideration American formatting specificity
 }

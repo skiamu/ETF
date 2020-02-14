@@ -10,10 +10,15 @@ write_to_mongo <- function(data) {
 get_from_mongo <- function(ticker, aod) {
     futile.logger::flog.info(glue::glue("reading {ticker} from mongo as of {aod}"))
     data <- isharesETF_Get(ticker = ticker, aod = aod)
-    list(
-        aod = data$aod,
-        ticker = data$ticker,
-        summary_data = tibble::as_tibble(data$data$summary_data[[1]]),
-        constituents = tibble::as_tibble(data$data$constituents[[1]])
-    )
+    if (!is.data.frame(data)) {
+        futile.logger::flog.info(glue::glue("object return is not a dataframe {ticker}, {aod}"))
+        NULL
+    } else {
+        list(
+            aod = data$aod,
+            ticker = data$ticker,
+            summary_data = tibble::as_tibble(data$data$summary_data[[1]]),
+            constituents = tibble::as_tibble(data$data$constituents[[1]])
+        )
+    }
 } # get_from_mongo

@@ -1,11 +1,14 @@
 #' IShares class constructor
 #'
-#' IShares class constructor
+#' The \code{IShares} class is a "virtual" class in the sense that it's never
+#' actually instantiated but used to give the interface to its subclasses.
+#' For instace at the \code{IShares} class level we implement the getter
+#' methods
 #'
-#' @param summary_link link where the IShares summary data is downloaded from.
+#' @param summary_link link where the IShares summary data (in JSON format) is downloaded from.
 #'    This is the data summarizing all the ETF of the IShares provider
 #'
-#' @export
+#' @return a new \code{IShares} object
 IShares <- function(summary_link) {
     stopifnot(is.character(summary_link))
     new_IShares(
@@ -26,7 +29,16 @@ new_IShares <- function(summary_link,
     )
 } # new_IShares
 
-#' @export
+#' Download summary data
+#'
+#' download the JSON summary data from the IShares website. For instance, this data
+#' is rendered at the following address \link{https://www.ishares.com/uk/individual/en/products/etf-investments}
+#'
+#' @inheritParams httr::content
+#' @inheritParams IShares
+#'
+#' @return the JSON data downloaded from \code{summary_link} is the format specified by
+#'    \code{as}
 download_summary_data <- function(summary_link, as = "parsed") {
     futile.logger::flog.info(
         glue::glue("Downloading IShares summary data from {summary_link} and returning it as {dplyr::if_else(as == \"parsed\", \"list\", \"text\")}")
@@ -37,6 +49,11 @@ download_summary_data <- function(summary_link, as = "parsed") {
 } # download_summary_data
 
 #' Parse IShares list
+#'
+#' parses the raw JSON data (usually returned as nested lists) into a clean dataframe
+#' of character data. We decided to return character data to avoid data type issues
+#' during the parsing. When the JSON data is downloaded using \code{as = "parsed"},
+#' the parsing is done using the functions in the \link{https://tidyr.tidyverse.org/index.html} package
 #'
 #' @param res_parsed a list returned by the \link{httr::content} function. The list
 #'     ha the following attributes: \itemize{
@@ -49,8 +66,10 @@ download_summary_data <- function(summary_link, as = "parsed") {
 #'     In particular, it's a list with the following attributes: \itemize{
 #'        \item \code{tableData} a list with two attributes: \code{columns} and
 #'           \code{data}. The first one store the column names and the second the actual data
-#'        \item \code{config}
+#'        \item \code{config}.
 #'     }
+#'
+#' @return a dataframe of characters. Each row containd summary data for one etf
 parse_summary_data <- function(res_parsed) {
     assertthat::assert_that(is.list(res_parsed))
     futile.logger::flog.info("parsing summary data")
@@ -100,6 +119,7 @@ parse_summary_data <- function(res_parsed) {
             stringr::str_trim()
     } else {
         futile.logger::flog.warn("the column `localExchangeTicker` doesn't exist in summary data!")
+        stop("the column `localExchangeTicker` doesn't exist in summary data!")
     }
     return(out)
 } # parse_summary_data
@@ -113,20 +133,29 @@ parse_chr_data <- function(s) {
 
 #' Download IShares constituents
 #'
+#' downloads from the IShares website the data regarding etf constituents. Constituent data
+#' is publish in each etf web page as a csv file and we read it directly from there.
+#' In \code{summary_data} there's the link pointing to the page where the csv is
+#' published
+#'
 #' @param summary_data summary data dataframe as returned by \link{parse_summary_data}
 #' @param download_csv if \code{TRUE} the constituents csv files will be saved in
 #'    a local folder called `csv_files`
-#' @param url_fixed_number
+#' @param url_fixed_number a country-specific code found in the url
+#' @param region IShares geographical region (e.g. US)
 #'
 #' @return a named-list. Names are the \code{localExchangeTicker} found in \code{summary_data}
 #'    and the elements are the csv file found in each ETF web page in melted format.
 #'    By melted format we mean as output of the function \link{readr::melt_csv}
-download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fixed_number) {
+download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fixed_number, region) {
     # futile.logger::flog.info("downloading US ETF constituents")
     assertthat::assert_that(is.data.frame(summary_data))
+    assertthat::assert_that(is.logical(download_csv))
     ## -------------------------------------------------------------------------
     # 1) CREATE THE URL
     ## -------------------------------------------------------------------------
+    # for an example go to a single etf IShares web page and copy the address of the
+    # csv file in the constituents section
     summary_data <- summary_data %>%
         dplyr::mutate(
             effective_productPageUrl = glue::glue("https://www.ishares.com{productPageUrl}/{url_fixed_number}.ajax?fileType=csv&fileName={localExchangeTicker}_holdings&dataType=fund")
@@ -135,7 +164,7 @@ download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fix
     # 2) DOWNLOAD THE CSV
     ## -------------------------------------------------------------------------
     if (download_csv) {
-        dir.create("./csv_files")
+        dir.create("./csv_files", showWarnings = FALSE)
         summary_data[["effective_productPageUrl"]] %>%
             purrr::iwalk( ~ {
                 ticker <- summary_data[["localExchangeTicker"]][[.y]]
@@ -144,11 +173,9 @@ download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fix
                     try({
                         download.file(
                             url = .x,
-                            destfile = glue::glue("./csv_files/{ticker}.csv")
+                            destfile = glue::glue("./csv_files/{ticker}_{region}.csv")
                         )
                     })
-                } else {
-                    NULL
                 }
             })
     }
@@ -183,8 +210,26 @@ download_etf_constituents <- function(summary_data, download_csv = TRUE, url_fix
         purrr::set_names(localExchangeTicker)
 } # download_etf_constituents_US
 
+#' Classify constituent data
+#'
+#' The constituent data is downloaded in a melted format so as not to incurr in
+#' reading errors. After that we have to understand the structure of the csv files.
+#' For this reason we assume there exsist fix templates. This function assigns
+#' templates to constituent data: for instance, if a dataframe is in template_1
+#' format than \code{classify_constituent_data} will assign to it the string
+#' \code{parse_template_1}, which is the function used for parsing the dataframe
+#'
+#' @param melted_constituents_list list of dataframe with the constituent csv file
+#'    in melted format
+#' @param n_template number of template data model availabe
+#' @inheritParams download_etf_constituents
+#'
+#' @return a named-list with the names of the parsing functions for each constituent
+#'    dataframe. If no template matches the data \code{NULL} is returned instead
 classify_constituent_data <- function(melted_constituents_list, region = "US", n_template = 3) {
     assertthat::assert_that(is.list(melted_constituents_list))
+    assertthat::assert_that(is.character(region))
+    futile.logger::flog.info(glue::glue("classifing {region} ETF constituents using {n_template} template"))
     out <- melted_constituents_list %>%
         purrr::imap( ~ {
             futile.logger::flog.info(glue::glue("classifying {.y}"))
@@ -205,10 +250,24 @@ classify_constituent_data <- function(melted_constituents_list, region = "US", n
         })
 } # classify_constituent_data
 
+#' Parse constituent data
+#'
+#' Call the parsing function for each melted constituents dataframe
+#'
+#' @param template_classification named-list returned by the function \link{classify_constituent_data}
+#'    with the names of the function used to parse each melted dataframe
+#' @inheritParams classify_constituent_data
+#'
+#' @return a list of dataframes. The dataframes are in a wide format and as parsed as
+#'    possible. List names are local tickers
 parse_etf_constituents <- function(melted_constituents_list,
                                    template_classification) {
+    assertthat::assert_that(all(
+        is.list(melted_constituents_list),
+        is.list(template_classification)
+    ))
     ## -------------------------------------------------------------------------
-    # 1) PARSE ETF CONSTITUENTS
+    # 1) CALL ETF PARSERS
     ## -------------------------------------------------------------------------
     out <- vector("list", length(melted_constituents_list))
     for (i in seq_along(melted_constituents_list)) {
@@ -219,10 +278,9 @@ parse_etf_constituents <- function(melted_constituents_list,
             },
             error = function(e) {
                 futile.logger::flog.error(e)
-                return(NULL)
             })
         } else {
-            NULL
+            futile.logger::flog.info(glue::glue("not parsing {names(melted_constituents_list)[[i]]} because it's NULL"))
         }
     }
     ## -------------------------------------------------------------------------
@@ -247,6 +305,14 @@ parse_etf_constituents <- function(melted_constituents_list,
     return(out)
 } # parse_etf_constituents
 
+#' Parse colum names
+#'
+#' Most of the column names contain special characters or spaces. This function
+#' gives them an uniform formatting by removing spaces and special characters
+#'
+#' @param df a datframe
+#'
+#' @return a dataframe with parsed column names
 rename_col <- function(df) {
     df %>%
         dplyr::rename_all( ~ {
@@ -258,34 +324,20 @@ rename_col <- function(df) {
         })
 } # rename_col
 
-#' @export
-add_const_to_summary_data <- function(obj) {
-    UseMethod("add_const_to_summary_data")
-} # add_const_to_summary_data
-
-add_const_to_summary_data <- function(obj) {
-    if (!purrr::is_empty(get_constituents(obj, ticker = "all")) &
-        !purrr::is_empty(get_summary_data(obj))) {
-        tibble::tibble(
-            ticker = names(get_constituents(obj, ticker = "all")),
-            constituents = get_constituents(obj, ticker = "all")
-        ) %>%
-            dplyr::right_join(
-                get_summary_data(obj),
-                by = c("ticker"="localExchangeTicker")
-            )
-    }
-} # add_const_to_summary_data
-
 #' Convert data in mongo format
 #'
-#' The data in mongo is saved using the aod and ticker as keys and the data is
-#' a list where the first field if the row from summary_data and the second the
+#' The data is saved in mongo using the aod and ticker as keys and the data is
+#' a list where the first field is the row from summary_data and the second the
 #' constituents datafarme
 #'
 #' @param obj a \code{IShares} object or one of its subclasses
 #'
-#' @return
+#' @return a named list. Elements are list with the following fields
+#'    \itemize{
+#'       \item \code{aod} nav as of date
+#'       \item \code{ticker} local exchange ticker plus region
+#'       \item \code{data} a list with summary and constiruents data
+#'    }
 #'
 #' @export
 to_mongo_data_format <- function(obj) {
@@ -293,18 +345,18 @@ to_mongo_data_format <- function(obj) {
 } # to_mongo_data_format
 
 #' @export
-to_mongo_data_format <- function(obj) {
+to_mongo_data_format.IShares <- function(obj) {
     tickers <- names(get_constituents(obj, ticker = "all"))
     constituents_list <- get_constituents(obj)
-    summary_data <- get_summary_data(obj) %>%
-        dplyr::filter(localExchangeTicker %in% tickers)
+    summary_data <- get_summary_data(obj) %>% dplyr::filter(localExchangeTicker %in% tickers)
     out <- vector("list", length(tickers))
     for (i in seq_along(tickers)) {
-        futile.logger::flog.info(glue::glue("converting in mongo format {tickers[[i]]}"))
-        summary_data_slice <- summary_data %>%
-            dplyr::filter(localExchangeTicker == tickers[[i]])
+        futile.logger::flog.info(glue::glue("converting to mongo format {tickers[[i]]}"))
+        summary_data_slice <- summary_data %>% dplyr::filter(localExchangeTicker == tickers[[i]])
         assertthat::assert_that(nrow(summary_data_slice) == 1)
-        ## 1) get aod ----------------------------------------------------------
+        ## ---------------------------------------------------------------------
+        ## 1) GET AOD
+        ## ---------------------------------------------------------------------
         if ("navAmountAsOf" %in% colnames(summary_data_slice)) {
             aod <- summary_data_slice[["navAmountAsOf"]]
             if (is.na(aod)) {
@@ -315,12 +367,13 @@ to_mongo_data_format <- function(obj) {
             futile.logger::flog.error(glue::glue("`summary_data` has no column `navAmountAsOf`!"))
             next
         }
-        ## 2) get constituents -------------------------------------------------
         constituents_df <- constituents_list[[i]]
         if (is.null(constituents_df)) {
             futile.logger::flog.warn(glue::glue("{tickers[[i]]} has no constituents, exporting only summary data"))
         }
-        ## 3) exporting to mongo format  ---------------------------------------
+        ## ---------------------------------------------------------------------
+        ## 2) EXPORTING TO MONGO FORMAT
+        ## ---------------------------------------------------------------------
         out[[i]] <- list(
             aod = aod ,
             ticker = glue::glue("{tickers[[i]]}_{get_region(obj)}"),
@@ -343,6 +396,7 @@ get_summary_data <- function(obj) {
     UseMethod("get_summary_data")
 } # get_summary_data
 
+#' @export
 get_summary_data.IShares <- function(obj) {
     assertthat::has_name(obj, "summary_data")
     obj[["summary_data"]]
@@ -354,7 +408,7 @@ get_constituents <- function(obj, ticker) {
 } # get_constituents
 
 #' @export
-get_constituents <- function(obj, ticker = "all") {
+get_constituents.IShares <- function(obj, ticker = "all") {
     assertthat::has_name(obj, "constituents_list")
     if (ticker == "all") {
         obj$constituents_list
@@ -369,7 +423,7 @@ get_melted_constituents_list <- function(obj, ticker) {
     UseMethod("get_melted_constituents_list")
 } # get_melted_constituents_list
 
-get_melted_constituents_list <- function(obj, ticker = "all") {
+get_melted_constituents_list.IShares <- function(obj, ticker = "all") {
     assertthat::has_name(obj, "melted_constituents_list")
     if (ticker == "all") {
         obj$melted_constituents_list
@@ -395,8 +449,17 @@ to_csv <- function(obj, output_folder) {
     UseMethod("to_csv")
 } # to_csv
 
+#' Export to csv format
+#'
+#' \code{to_csv} export to csv format the dataframe \code{summary_data} and each
+#' dataframe in \code{constituents_list}. The name of constituents files is the
+#' ticker plus the region (e.g. IVV_US.csv)
+#'
+#' @param obj \code{IShares} object or one of its subclasses
+#' @param output_folder folder where the csv files are to be saved
+#'
 #' @export
-to_csv <- function(obj, output_folder) {
+to_csv.IShares <- function(obj, output_folder) {
     ## -------------------------------------------------------------------------
     # 1) EXPORT SUMMARY DATA
     ## -------------------------------------------------------------------------

@@ -7,9 +7,15 @@
 IShares(summary_link)
 }
 \arguments{
-\item{summary_link}{link where the IShares summary data is downloaded from.
+\item{summary_link}{link where the IShares summary data (in JSON format) is downloaded from.
 This is the data summarizing all the ETF of the IShares provider}
 }
+\value{
+a new \code{IShares} object
+}
 \description{
-IShares class constructor
+The \code{IShares} class is a "virtual" class in the sense that it's never
+actually instantiated but used to give the interface to its subclasses.
+For instace at the \code{IShares} class level we implement the getter
+methods
 }

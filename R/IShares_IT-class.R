@@ -1,9 +1,21 @@
 
 #' IShares_IT class constructor
 #'
-#' IShares_IT class constructor
+#' the \code{IShares_IT} class is a subclass of the \code{IShares} class and represents
+#' the ETF data from the Italian Ishares website. It overrided some methods for
+#' taking into consideration Italian formatting specificity
 #'
+#' @param get_constituents \code{TRUE} for downloading ETF constituents, \code{FALSE}
+#' otherwise
+#' @param download_constituents_csv \code{TRUE} for saving the csv constituents files
+#' from the ETF web site, \code{FALSE} otherwise
+#' @param melted_constituents_list constituents data in melted format
+#' @param constituents_list constituents data in parsed format
+#' @param ... subclass additional attributes
+#' @param class subclass names
 #' @inheritParams IShares
+#'
+#' @return a new \code{IShares_IT} object
 IShares_IT <- function(summary_link,
                        get_constituents = FALSE,
                        download_constituents_csv = FALSE,
@@ -25,7 +37,7 @@ IShares_IT <- function(summary_link,
     ## -------------------------------------------------------------------------
     # 2) PARSE CHARACTER SUMMMARY DATA
     ## -------------------------------------------------------------------------
-    obj$summary_data <- parse_summary_data_IT(obj$summary_data)
+    obj$summary_data <- parse_summary_data_IT(get_summary_data(obj))
     ## -------------------------------------------------------------------------
     # 3) GET ETF CONSTITUENTS
     ## -------------------------------------------------------------------------
@@ -33,7 +45,8 @@ IShares_IT <- function(summary_link,
         obj$melted_constituents_list <- download_etf_constituents(
                 summary_data = get_summary_data(obj),
                 url_fixed_number = get_url_fixed_number(obj),
-                download_csv = download_constituents_csv
+                download_csv = download_constituents_csv,
+                region = get_region(obj)
             )
         template_classification <- classify_constituent_data(
             melted_constituents_list = obj$melted_constituents_list,

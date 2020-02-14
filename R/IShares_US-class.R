@@ -1,9 +1,21 @@
 
 #' IShares_US class constructor
 #'
-#' IShares_US class constructor
+#' the \code{IShares_US} class is a subclass of the \code{IShares} class and represents
+#' the ETF data from the US IShares website. It overrides some methods of the
+#' \code{IShares} class for taking into consideration American formatting specificity
 #'
+#' @param get_constituents \code{TRUE} for downloading ETF constituents, \code{FALSE}
+#'    otherwise
+#' @param download_constituents_csv \code{TRUE} for saving the csv constituents files
+#'    from the ETF web site, \code{FALSE} otherwise
+#' @param melted_constituents_list constituents data in melted format
+#' @param constituents_list constituents data in parsed format
+#' @param ... subclass additional attributes
+#' @param class subclass names
 #' @inheritParams IShares
+#'
+#' @return a new \code{IShares_US} object
 IShares_US <- function(summary_link = character(),
                        get_constituents = TRUE,
                        download_constituents_csv = FALSE,
@@ -25,7 +37,7 @@ IShares_US <- function(summary_link = character(),
     ## -------------------------------------------------------------------------
     # 2) PARSE CHARACTER SUMMMARY DATA
     ## -------------------------------------------------------------------------
-    obj$summary_data <- parse_summary_data_US(obj$summary_data)
+    obj$summary_data <- parse_summary_data_US(get_summary_data(obj))
     ## -------------------------------------------------------------------------
     # 3) GET ETF CONSTITUENTS
     ## -------------------------------------------------------------------------
@@ -33,7 +45,8 @@ IShares_US <- function(summary_link = character(),
         obj$melted_constituents_list <- download_etf_constituents(
             summary_data = get_summary_data(obj),
             url_fixed_number = get_url_fixed_number(obj),
-            download_csv = download_constituents_csv
+            download_csv = download_constituents_csv,
+            region = get_region(obj)
         )
         template_classification <- classify_constituent_data(
             melted_constituents_list = obj$melted_constituents_list,
@@ -68,12 +81,12 @@ parse_date_col_US <- function(vec) {
 #' check if data is in template 1 format
 #'
 #' the constituents are in template 1 if in the range A2:A8 there are the following
-#' strings: Fund Holdings as of Inception Date, Shares Outstanding, Stock, Bond
-#' Cash and Other. The column B there are the values respectively.
+#' strings: Fund Holdings as of, Inception Date, Shares Outstanding, Stock, Bond
+#' Cash and Other. In the column B there are the values respectively.
 #'
-#' @param melted_data
+#' @param melted_data constituent dataframe in melted format
 #'
-#' @return \code{TRUE} if data is in template 1 format \code{FALSE} otherwise
+#' @return \code{TRUE} if data is in template 1 format, \code{FALSE} otherwise
 is_template_1_US <- function(melted_data) {
     if (is.null(melted_data)) return(FALSE)
     assertthat::assert_that(is.data.frame(melted_data))
@@ -97,6 +110,16 @@ is_template_1_US <- function(melted_data) {
     }
 } # is_template_1
 
+#' Parse template 1 US data
+#'
+#' this function parses the constituents data which is in the template 1 format.
+#' After extracting the column names, the character values (indeed the function
+#' readr::melt_csv convert all the data to char) are trimmed for removing blanks.
+#' The SEDOL colum is forced to be char
+#'
+#' @param melted_data constituent data in melted format
+#'
+#' @return a parsed tibble with constituent data
 parse_template_1_US <- function(melted_data) {
     assertthat::assert_that(is.data.frame(melted_data))
     aod <- melted_data %>%
@@ -130,14 +153,16 @@ parse_template_1_US <- function(melted_data) {
     return(data)
 } # parse_template_1
 
-#' check if data is in template 2 format
+#' Check if data is in template 2 format
 #'
 #' data is in template 2 format if there're two template 1 stacked one above the
 #' other. This is the case for the Russell 2500 ETF. This ETF buys the Russel 2000
 #' and than buys 500 stocks. The first chunk of data has the  Russel 2000 ETF while
 #' the second chinck expands this ETF showing all the 2500 names
 #'
+#' @inheritParams parse_template_1_US
 #'
+#' @return \code{TRUE} if data is in template 2 format, \code{FALSE} otherwise
 is_template_2_US <- function(melted_data) {
     if (is.null(melted_data)) return(FALSE)
     assertthat::assert_that(is.data.frame(melted_data))
@@ -161,6 +186,13 @@ is_template_2_US <- function(melted_data) {
     }
 } # is_template_2
 
+#' Parse template 2 US data
+#'
+#' this function find the two blocks of data and passes them to \link{parse_template_1_US}
+#'
+#' @inheritParams is_template_1_US
+#'
+#' @return a parsed tibble with constituent data
 parse_template_2_US <- function(melted_data) {
     assertthat::assert_that(is.data.frame(melted_data))
     ## -------------------------------------------------------------------------

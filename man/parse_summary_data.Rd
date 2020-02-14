@@ -18,9 +18,15 @@ The most important attribute is data which contains the actual IShares data.
 In particular, it's a list with the following attributes: \itemize{
    \item \code{tableData} a list with two attributes: \code{columns} and
       \code{data}. The first one store the column names and the second the actual data
-   \item \code{config}
+   \item \code{config}.
 }}
 }
+\value{
+a dataframe of characters. Each row containd summary data for one etf
+}
 \description{
-Parse IShares list
+parses the raw JSON data (usually returned as nested lists) into a clean dataframe
+of character data. We decided to return character data to avoid data type issues
+during the parsing. When the JSON data is downloaded using \code{as = "parsed"},
+the parsing is done using the functions in the \link{https://tidyr.tidyverse.org/index.html} package
 }

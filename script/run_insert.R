@@ -1,4 +1,5 @@
-library(ETF)
+# library(ETF)
+devtools::load_all(".")
 library(futile.logger)
 library(glue)
 library(tidyverse)
@@ -32,12 +33,7 @@ UK_data %>% purrr::walk(write_to_mongo)
 
 
 
-
-
-
-
-
-w <- get_from_mongo(ticker = "MVEU_IT", aod = as.Date("2020-02-12"))
+# w <- get_from_mongo(ticker = "MVEU_IT", aod = as.Date("2020-02-12"))
 
 # isharesETF_Save(
 #     ticker = data[[i]]$ticker[1],
