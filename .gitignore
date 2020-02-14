@@ -63,3 +63,6 @@ Backup of *.doc*
 
 # excel files
 *.xlsx
+
+# pdf files
+*.pdf
