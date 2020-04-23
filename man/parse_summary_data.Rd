@@ -4,11 +4,11 @@
 \alias{parse_summary_data}
 \title{Parse IShares list}
 \usage{
-parse_summary_data(res_parsed)
+parse_summary_data(res_parsed, tickers_to_keep)
 }
 \arguments{
 \item{res_parsed}{a list returned by the \link{httr::content} function. The list
-ha the following attributes: \itemize{
+has the following attributes: \itemize{
 \item \code{code}
 \item \code{message}
 \item \code{status}
@@ -20,6 +20,9 @@ In particular, it's a list with the following attributes: \itemize{
       \code{data}. The first one store the column names and the second the actual data
    \item \code{config}.
 }}
+
+\item{tickers_to_keep}{character vector containing the tickers to keep. One might
+want to keep just a subset of tickers due to storage constraints}
 }
 \value{
 a dataframe of characters. Each row containd summary data for one etf

@@ -19,6 +19,6 @@ a named list. Elements are list with the following fields
 }
 \description{
 The data is saved in mongo using the aod and ticker as keys and the data is
-a list where the first field is the row from summary_data and the second the
-constituents datafarme
+a list where the first field is the row from \code{summary_data} and the second the
+\code{constituents} datafarme
 }

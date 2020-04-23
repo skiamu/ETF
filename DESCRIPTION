@@ -21,7 +21,8 @@ Imports:
     tidyjson,
     jsonlite,
     assertthat,
-    tibble
+    tibble,
+    stringdist
 RoxygenNote: 7.0.2
 Suggests: 
     testthat

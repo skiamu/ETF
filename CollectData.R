@@ -4,7 +4,9 @@ tryCatch({
     library(futile.logger)
     # library(glue)
     # library(tidyverse)
-    source("../Weekly_Commons/CollectData_IShares.R")
+    # source("../Weekly_Commons/CollectData_Base.R")
+    # source("../Weekly_Commons/CollectData_IShares.R")
+    source("../Weekly_Commons/CollectData_SourceMe.R")
     ## -------------------------------------------------------------------------
     # 1) DOWNLOAD AND STORE ISHARES DATA
     ## -------------------------------------------------------------------------

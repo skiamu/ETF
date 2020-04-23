@@ -8,8 +8,8 @@ classify_constituent_data(melted_constituents_list, region = "US",
   n_template = 3)
 }
 \arguments{
-\item{melted_constituents_list}{list of dataframe with the constituent csv file
-in melted format}
+\item{melted_constituents_list}{list of dataframes with the constituent csv file
+in melted format downloaded using the \code{readr::melt_csv} function}
 
 \item{region}{IShares geographical region (e.g. US)}
 

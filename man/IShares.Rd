@@ -4,11 +4,14 @@
 \alias{IShares}
 \title{IShares class constructor}
 \usage{
-IShares(summary_link)
+IShares(summary_link, tickers_to_keep)
 }
 \arguments{
 \item{summary_link}{link where the IShares summary data (in JSON format) is downloaded from.
 This is the data summarizing all the ETF of the IShares provider}
+
+\item{tickers_to_keep}{character vector containing the tickers to keep. One might
+want to keep just a subset of tickers due to storage constraints}
 }
 \value{
 a new \code{IShares} object

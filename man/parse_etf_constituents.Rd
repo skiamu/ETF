@@ -7,8 +7,8 @@
 parse_etf_constituents(melted_constituents_list, template_classification)
 }
 \arguments{
-\item{melted_constituents_list}{list of dataframe with the constituent csv file
-in melted format}
+\item{melted_constituents_list}{list of dataframes with the constituent csv file
+in melted format downloaded using the \code{readr::melt_csv} function}
 
 \item{template_classification}{named-list returned by the function \link{classify_constituent_data}
 with the names of the function used to parse each melted dataframe}
@@ -18,5 +18,8 @@ a list of dataframes. The dataframes are in a wide format and as parsed as
    possible. List names are local tickers
 }
 \description{
-Call the parsing function for each melted constituents dataframe
+Call the parsing function for each melted constituents dataframe. The tickers included
+in the output are the names of the input list \code{melted_constituents_list}.
+That is, all those ETF for which the LocalExchangeTicker is different from
+\code{NA} in \code{summary_data}.
 }

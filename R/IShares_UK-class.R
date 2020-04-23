@@ -8,6 +8,7 @@ IShares_UK <- function(summary_link,
                        download_constituents_csv = FALSE,
                        melted_constituents_list = list(),
                        constituents_list = list(),
+                       tickers_to_keep = character(),
                        ...,
                        class = character()) {
     ## -------------------------------------------------------------------------
@@ -18,6 +19,7 @@ IShares_UK <- function(summary_link,
         melted_constituents_list = melted_constituents_list,
         constituents_list = constituents_list,
         region = "UK",
+        tickers_to_keep = tickers_to_keep,
         ...,
         class = c(class, "IShares_UK")
     )

@@ -6,7 +6,8 @@
 \usage{
 IShares_US(summary_link = character(), get_constituents = TRUE,
   download_constituents_csv = FALSE, melted_constituents_list = list(),
-  constituents_list = list(), ..., class = character())
+  constituents_list = list(), tickers_to_keep = character(), ...,
+  class = character())
 }
 \arguments{
 \item{summary_link}{link where the IShares summary data (in JSON format) is downloaded from.
@@ -21,6 +22,9 @@ from the ETF web site, \code{FALSE} otherwise}
 \item{melted_constituents_list}{constituents data in melted format}
 
 \item{constituents_list}{constituents data in parsed format}
+
+\item{tickers_to_keep}{character vector containing the tickers to keep. One might
+want to keep just a subset of tickers due to storage constraints}
 
 \item{...}{subclass additional attributes}
 

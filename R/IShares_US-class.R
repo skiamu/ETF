@@ -11,6 +11,8 @@
 #'    from the ETF web site, \code{FALSE} otherwise
 #' @param melted_constituents_list constituents data in melted format
 #' @param constituents_list constituents data in parsed format
+#' @param tickers_to_keep character vector containing the tickers to keep. One might
+#' want to keep just a subset of tickers due to storage constraints
 #' @param ... subclass additional attributes
 #' @param class subclass names
 #' @inheritParams IShares
@@ -21,6 +23,7 @@ IShares_US <- function(summary_link = character(),
                        download_constituents_csv = FALSE,
                        melted_constituents_list = list(),
                        constituents_list = list(),
+                       tickers_to_keep = character(),
                        ...,
                        class = character()) {
     ## -------------------------------------------------------------------------
@@ -31,6 +34,7 @@ IShares_US <- function(summary_link = character(),
         melted_constituents_list = melted_constituents_list,
         constituents_list = constituents_list,
         region = "US",
+        tickers_to_keep = tickers_to_keep,
         ...,
         class = c(class, "IShares_US")
     )
